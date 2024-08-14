@@ -1,9 +1,7 @@
 # Bitbucket to GitLab Migration Tool
 ## Описание проекта
 Этот проект предназначен для автоматической миграции репозиториев из Bitbucket в GitLab.
-Основные функции включают клонирование репозиториев из Bitbucket, создание соответствующих проектов и групп в GitLab,
-а также при необходимости перенос всех веток и коммитов. Перед переносом всех веток проекта рекомендуется удалить
-ненужные ветки для увеличения скорости работы программы.
+Основные функции включают клонирование репозиториев из Bitbucket, создание соответствующих проектов и групп в GitLab.
 ## Установка
 1. Убедитесь, что у вас установлены Java и Maven.
 2. Склонируйте репозиторий:
@@ -19,7 +17,6 @@
     gitlab.token=<Токен пользователя в гитлаб>
     gitlab.paths=<Список путей GitLab проектов через запятую>
     bitbucket.urls=<Список URL Bitbucket репозиториев через запятую>
-    bitbucket.migrateAllBranches=<Мигрировать все ветки проекта - true или false>
     ```
 ## Использование
 Запустите приложение из Main-класса или с помощью следующей команды:
@@ -40,7 +37,6 @@ mvn exec:java -Dexec.mainClass="org.hoffmann.Main"
 **Migrator.createGitLabProject(String gitlabUrl, String gitlabToken, String projectPath):** Создает проект в GitLab со всеми необходимыми группами.  
 **Migrator.pushRepositoryToGitLab(Path repoDir, String gitlabRepoUrl, String gitlabToken):** Отправляет репозиторий в GitLab.  
 **Migrator.deleteDirectory(File file):** Удаляет временную директорию.  
-**Migrator.addAllBranches(Path repoDir, String gitlabRepoUrl):** Миграция всех веток в GitLab.
 ## Взаимодействие между классами
 Main вызывает метод migrate() класса Migrator для выполнения миграции.
 Migrator использует библиотеки JGit для работы с Git и gitlab4j-api для взаимодействия с GitLab API.

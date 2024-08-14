@@ -2,9 +2,7 @@ package org.hoffmann;
 
 import org.eclipse.jgit.api.CloneCommand;
 import org.eclipse.jgit.api.Git;
-import org.eclipse.jgit.api.PushCommand;
 import org.eclipse.jgit.api.errors.GitAPIException;
-import org.eclipse.jgit.lib.Ref;
 import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
 import org.gitlab4j.api.GitLabApi;
 import org.gitlab4j.api.GitLabApiException;
@@ -17,8 +15,8 @@ import org.gitlab4j.api.models.Visibility;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 
 import org.apache.commons.io.FileUtils;
 import org.slf4j.Logger;
@@ -37,7 +35,6 @@ public class Migrator {
     static String GITLAB_TOKEN;
     static List<String> GITLAB_PATHS;
     static List<String> BITBUCKET_URLS;
-    static Boolean MIGRATE_ALL_BRANCHES;
 
     /**
      * Initiates the migration process.
@@ -53,7 +50,6 @@ public class Migrator {
                 tempDir = cloneRepositoryFromBitbucket(BITBUCKET_URLS.get(i), BITBUCKET_USERNAME, BITBUCKET_PASSWORD);
                 Project gitlabProject = createGitLabProject(GITLAB_URL, GITLAB_TOKEN, GITLAB_PATHS.get(i));
                 pushRepositoryToGitLab(tempDir, gitlabProject.getHttpUrlToRepo(), GITLAB_TOKEN);
-                addAllBranches(tempDir, gitlabProject.getHttpUrlToRepo());
             } catch (IOException | GitAPIException | GitLabApiException e) {
                 LOGGER.error("Exception: " + e.getMessage());
             } finally {
@@ -90,13 +86,14 @@ public class Migrator {
      * @throws GitAPIException
      */
     private static Path cloneRepositoryFromBitbucket(String bitbucketUrl, String username, String password) throws IOException, GitAPIException {
-        Path currentDir = Paths.get(System.getProperty("user.dir"));
-        Path tempDir = currentDir.resolve("tempRepo_" + UUID.randomUUID());
+        Path tempDir = Files.createTempDirectory("tempRepo_" + UUID.randomUUID());
+
         CloneCommand cloneCommand = Git.cloneRepository()
                 .setURI(bitbucketUrl)
                 .setDirectory(tempDir.toFile())
                 .setCredentialsProvider(new UsernamePasswordCredentialsProvider(username, password))
-                .setCloneAllBranches(true);
+                .setCloneAllBranches(true)
+                .setMirror(true);
         Git git = cloneCommand.call();
         LOGGER.info("Repository cloned to: '" + git.getRepository().getDirectory() + "'");
         git.close();
@@ -169,42 +166,22 @@ public class Migrator {
      */
     private static void pushRepositoryToGitLab(Path repoDir, String gitlabRepoUrl, String gitlabToken) throws GitAPIException {
         try (Git git = Git.open(repoDir.toFile())) {
-            PushCommand pushCommand = git.push()
+            git.remoteAdd().
+                    setName("gitlab").
+                    setUri(new org.eclipse.jgit.transport.URIish(gitlabRepoUrl)).
+                    call();
+
+            git.push()
                     .setRemote(gitlabRepoUrl)
                     .setCredentialsProvider(new UsernamePasswordCredentialsProvider("oauth2", gitlabToken))
-                    .setPushAll();
-            pushCommand.call();
+                    .setPushTags()
+                    .setPushAll()
+                    .setForce(true)
+                    .call();
             LOGGER.info("Repository pushed to " + gitlabRepoUrl);
         } catch (Exception e) {
             throw new GitAPIException("Failed to push repository: " + e.getMessage()) {
             };
-        }
-    }
-
-    /**
-     * Migrates all branches to GitLab if MIGRATE_ALL_BRANCHES is true.
-     *
-     * @param repoDir       the repository directory
-     * @param gitlabRepoUrl the GitLab repository URL
-     * @throws IOException
-     */
-    private static void addAllBranches(Path repoDir, String gitlabRepoUrl) throws IOException {
-        if (MIGRATE_ALL_BRANCHES) {
-            try (Git git = Git.open(repoDir.toFile())) {
-                List<Ref> remoteBranches = git.branchList().setListMode(org.eclipse.jgit.api.ListBranchCommand.ListMode.REMOTE).call();
-                for (Ref remoteBranch : remoteBranches) {
-                    String branchName = remoteBranch.getName().replace("refs/remotes/origin/", "");
-                    try {
-                        git.checkout().setCreateBranch(true).setName(branchName).setStartPoint(remoteBranch.getName()).call();
-                        git.push().setRemote(gitlabRepoUrl).setCredentialsProvider(new UsernamePasswordCredentialsProvider("oauth2", GITLAB_TOKEN)).add(branchName).call();
-                        LOGGER.info("Pushed branch '" + branchName + "' to " + gitlabRepoUrl);
-                    } catch (Exception e) {
-                        LOGGER.info("Branch '" + branchName + "' already exists");
-                    }
-                }
-            } catch (GitAPIException e) {
-                throw new RuntimeException(e);
-            }
         }
     }
 
@@ -238,7 +215,6 @@ public class Migrator {
             GITLAB_TOKEN = properties.getProperty("gitlab.token");
             GITLAB_PATHS = Arrays.asList(properties.getProperty("gitlab.paths").split(","));
             BITBUCKET_URLS = Arrays.asList(properties.getProperty("bitbucket.urls").split(","));
-            MIGRATE_ALL_BRANCHES = Boolean.valueOf(properties.getProperty("bitbucket.migrateAllBranches"));
         } catch (IOException e) {
             LOGGER.error("Load config exception: " + e.getMessage());
         }
@@ -268,9 +244,6 @@ public class Migrator {
         }
         if (BITBUCKET_URLS.size() != GITLAB_PATHS.size()) {
             throw new IllegalArgumentException("The number of Bitbucket URLs and GitLab paths must be the same in config.properties");
-        }
-        if (MIGRATE_ALL_BRANCHES == null) {
-            throw new IllegalArgumentException("bitbucket.migrateAllBranches is not set in config.properties");
         }
     }
 }
