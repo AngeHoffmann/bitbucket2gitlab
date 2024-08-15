@@ -21,7 +21,7 @@
 ## Использование
 Запустите приложение из Main-класса или с помощью следующей команды:
 ```bash
-mvn exec:java -Dexec.mainClass="org.hoffmann.Main"
+mvn compile exec:java -Dexec.mainClass="org.hoffmann.Main"
 ```
 
 ## Основные классы и их функциональность
